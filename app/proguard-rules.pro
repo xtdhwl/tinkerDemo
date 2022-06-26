@@ -19,3 +19,17 @@
 # If you keep the line number information, uncomment this to
 # hide the original source file name.
 #-renamesourcefileattribute SourceFile
+
+-keepattributes SourceFile,LineNumberTable
+
+-dontwarn com.google.**
+
+-dontwarn com.android.**
+-dontwarn net.shenru.myapplication.**
+#for command line version, we must keep all the loader class to avoid proguard mapping conflict
+#your dex.loader pattern here
+-keep public class com.tencent.tinker.loader.** {
+    *;
+}
+
+-keep class net.shenru.myapplication.** { *; }

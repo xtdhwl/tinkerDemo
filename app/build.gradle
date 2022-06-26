@@ -29,7 +29,23 @@ android {
         versionCode 1
         versionName "1.0"
 
+        multiDexEnabled true
+//        multiDexKeepFile file("tinker_multidexkeep.pro")
+        multiDexKeepProguard file("tinker_multidexkeep.pro")
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
+
+        /**
+         * buildConfig can change during patch!
+         * we can use the newly value when patch
+         */
+        buildConfigField "String", "MESSAGE", "\"I am the base apk\""
+//        buildConfigField "String", "MESSAGE", "\"I am the patch apk\""
+        /**
+         * client version would update with patch
+         * so we can get the newly git version easily!
+         */
+        buildConfigField "String", "TINKER_ID", "\"${getTinkerIdValue()}\""
+        buildConfigField "String", "PLATFORM", "\"all\""
     }
 
 
@@ -39,13 +55,60 @@ android {
             proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
             signingConfig signingConfigs.release
         }
+        debug {
+            debuggable true
+            minifyEnabled false
+            signingConfig signingConfigs.debug
+        }
+    }
+    //recommend
+    dexOptions {
+        jumboMode = true
+//        preDexLibraries = false
     }
     compileOptions {
         sourceCompatibility JavaVersion.VERSION_1_8
         targetCompatibility JavaVersion.VERSION_1_8
     }
+    sourceSets {
+        main {
+            jniLibs.srcDirs = ['libs']
+        }
+    }
+
+    packagingOptions {
+        exclude "/META-INF/**"
+    }
 }
 
+//afterEvaluate {
+//    tasks.matching {
+//        it.name.startsWith('dex')
+//    }.each { dx ->
+//        println("afterEvaluate=====:" + dx)
+//        if (dx.additionalParameters == null) {
+//            dx.additionalParameters = []
+//        }
+//        dx.additionalParameters += '--multi-dex'
+//
+//        // 设置multidex.keep文件中class为第一个dex文件中包含的class，如果没有下一项设置此项无作用
+////        dx.additionalParameters += "--main-dex-list=$projectDir/multidex.keep".toString()
+//
+//        //此项添加后第一个classes.dex文件只能包含-main-dex-list列表中class
+////        dx.additionalParameters += '--minimal-main-dex'
+//    }
+//}
+//afterEvaluate {
+//    tasks.matching {
+//        it.name.startsWith('dex')
+//    }.each { dx ->
+//        if (dx.additionalParameters == null) {
+//            dx.additionalParameters = ['--multi-dex']
+//        } else {
+//            dx.additionalParameters += '--multi-dex'
+//        }
+//    }
+//}
 
 
 dependencies {
@@ -54,13 +117,38 @@ dependencies {
     implementation 'com.google.android.material:material:1.6.1'
     implementation 'androidx.constraintlayout:constraintlayout:2.1.4'
 
-    implementation('com.tencent.tinker:tinker-android-lib:1.9.14.18')
+    implementation "androidx.multidex:multidex:2.0.1"
+    api 'com.jakewharton.rxbinding2:rxbinding:2.1.1'
+    api 'org.apache.commons:commons-lang3:3.11'
+
+    api 'com.ogaclejapan.smarttablayout:library:2.0.0'
+    api 'com.ogaclejapan.smarttablayout:utils-v4:2.0.0'
+    api 'androidx.cardview:cardview:1.0.0'
+    api 'androidx.gridlayout:gridlayout:1.0.0'
+    implementation("com.squareup.okhttp3:okhttp:4.10.0")
+    implementation 'com.squareup.picasso:picasso:2.8'
+//    implementation 'io.sentry:sentry-android:6.1.3'
+    implementation 'com.blankj:utilcodex:1.31.0'
+//    compileOnly("com.tencent.tinker:tinker-android-anno:1.9.14.20") { changing = true }
+//    compileOnly("com.tencent.tinker:tinker-android-anno-support:1.9.14.20") { changing = true }
+
+    implementation('com.tencent.tinker:tinker-android-lib:1.9.14.20')
     testImplementation 'junit:junit:4.13.2'
     androidTestImplementation 'androidx.test.ext:junit:1.1.3'
     androidTestImplementation 'androidx.test.espresso:espresso-core:3.4.0'
 }
 
-
+def gitSha() {
+    try {
+        String gitRev = 'git rev-parse --short HEAD'.execute(null, project.rootDir).text.trim()
+        if (gitRev == null) {
+            throw new GradleException("can't get git rev, you should add git to system path or just input test value, such as 'testTinkerId'")
+        }
+        return gitRev
+    } catch (Exception e) {
+        throw new GradleException("can't get git rev, you should add git to system path or just input test value, such as 'testTinkerId'")
+    }
+}
 
 def bakPath = file("${buildDir}/bakApk/")
 
@@ -75,11 +163,11 @@ ext {
 
     //for normal build
     //old apk file to build patch apk
-    tinkerOldApkPath = "${bakPath}/app-debug-0424-15-02-56.apk"
+    tinkerOldApkPath = "${bakPath}/app-release-0626-16-02-27.apk"
     //proguard mapping file to build patch apk
-    tinkerApplyMappingPath = "${bakPath}/app-debug-1018-17-32-47-mapping.txt"
+    tinkerApplyMappingPath = "${bakPath}/app-release-0626-16-02-27-mapping.txt"
     //resource R.txt to build patch apk, must input if there is resource changed
-    tinkerApplyResourcePath = "${bakPath}/app-debug-0424-15-02-56-R.txt"
+    tinkerApplyResourcePath = "${bakPath}/app-release-0626-16-02-27-R.txt"
 
     //only use for build all flavor, if not, just ignore this field
     tinkerBuildFlavorDirectory = "${bakPath}/app-1018-17-32-47"
@@ -233,7 +321,7 @@ tinkerPatch {
              */
             loader = [
                     //use sample, let BaseBuildInfo unchangeable with tinker
-                    "tinker.sample.android.app.BaseBuildInfo"
+
             ]
         }
 
@@ -302,18 +390,18 @@ tinkerPatch {
         /**
          * if you don't use zipArtifact or path, we just use 7za to try
          */
-        sevenZip {
-            /**
-             * optional，default '7za'
-             * the 7zip artifact path, it will use the right 7za with your platform
-             */
-            zipArtifact = "com.tencent.mm:SevenZip:1.1.10"
-            /**
-             * optional，default '7za'
-             * you can specify the 7za path yourself, it will overwrite the zipArtifact value
-             */
-//        path = "/usr/local/bin/7za"
-        }
+//        sevenZip {
+//            /**
+//             * optional，default '7za'
+//             * the 7zip artifact path, it will use the right 7za with your platform
+//             */
+//            zipArtifact = "com.tencent.mm:SevenZip:1.2.17"
+//            /**
+//             * optional，default '7za'
+//             * you can specify the 7za path yourself, it will overwrite the zipArtifact value
+//             */
+////        path = "/usr/local/bin/7za"
+//        }
     }
 
     List<String> flavors = new ArrayList<>();
@@ -341,14 +429,16 @@ tinkerPatch {
                         def newFileNamePrefix = hasFlavors ? "${fileNamePrefix}" : "${fileNamePrefix}-${date}"
 
                         def destPath = hasFlavors ? file("${bakPath}/${project.name}-${date}/${variant.flavorName}") : bakPath
-
+//                        println("variant.outputs.first():" + variant.outputs.first())
                         if (variant.metaClass.hasProperty(variant, 'packageApplicationProvider')) {
                             def packageAndroidArtifact = variant.packageApplicationProvider.get()
                             if (packageAndroidArtifact != null) {
                                 try {
-                                    from new File(packageAndroidArtifact.outputDirectory.getAsFile().get(), variant.outputs.first().apkData.outputFileName)
+//                                    from new File(packageAndroidArtifact.outputDirectory.getAsFile().get(), variant.outputs.first().apkData.outputFileName)
+                                    from new File(packageAndroidArtifact.outputDirectory.getAsFile().get(), variant.outputs.first().outputFileName)
                                 } catch (Exception e) {
-                                    from new File(packageAndroidArtifact.outputDirectory, variant.outputs.first().apkData.outputFileName)
+//                                    from new File(packageAndroidArtifact.outputDirectory, variant.outputs.first().apkData.outputFileName)
+                                    from new File(packageAndroidArtifact.outputDirectory, variant.outputs.first().outputFileName)
                                 }
                             } else {
                                 from variant.outputs.first().mainOutputFile.outputFile
